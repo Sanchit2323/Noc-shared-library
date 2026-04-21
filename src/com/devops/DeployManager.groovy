@@ -20,7 +20,6 @@ class DeployManager implements Serializable {
         script.echo "Deploying to ${env}"
         
         script.sh """
-        cd OT-Microservices
         docker-compose up -d
     """
     }

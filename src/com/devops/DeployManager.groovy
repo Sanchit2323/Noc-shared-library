@@ -18,7 +18,11 @@ class DeployManager implements Serializable {
 
     def deploy(String env) {
         script.echo "Deploying to ${env}"
-        script.sh "echo Deploy success"
+        
+        script.sh """
+        cd OT-Microservices
+        docker-compose up -d
+    """
     }
 
     def rollback(String env) {

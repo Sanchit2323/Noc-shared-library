@@ -20,8 +20,9 @@ class DeployManager implements Serializable {
         script.echo "Deploying to ${env}"
         
         script.sh """
-        docker-compose up -d
-    """
+            make build-images
+            make setup
+        """
     }
 
     def rollback(String env) {

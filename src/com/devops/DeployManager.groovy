@@ -26,18 +26,30 @@ class DeployManager implements Serializable {
         script.echo "Building Docker images..."
         script.sh "docker-compose build"
 
-        // Step 2: Deploy GREEN
+        // STEP 2: Ensure BLUE is running
+        script.echo "Starting BLUE (stable version)..."
+        script.sh "docker-compose up -d ${blue} || true"
+
+        // Step 3: Deploy GREEN
         script.echo "Deploying GREEN (new version)..."
         script.sh "docker-compose up -d ${green}"
 
-        // wait for container
-        script.sleep(10)
+        // wait for app
+        script.echo "Waiting for GREEN to be ready..."
+        script.sleep(20)
 
         try {
             // Step 3: Health check
             script.echo "Running health check on GREEN..."
 
-            script.sh "curl -f http://localhost:8085/employee/search/all"
+            script.sh """
+            for i in {1..5}; do
+              curl -f http://localhost:8085/employee/search/all && exit 0
+              echo "Retrying health check..."
+              sleep 5
+            done
+            exit 1
+            """
 
             // Step 4: Switch traffic
             script.echo "Switching traffic to GREEN..."

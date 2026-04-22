@@ -44,7 +44,7 @@ class DeployManager implements Serializable {
 
             script.sh """
             for i in {1..5}; do
-              curl -f http://localhost:8085/employee/search/all && exit 0
+              curl -f http://empms-employee-green:8085/employee/search/all && exit 0
               echo "Retrying health check..."
               sleep 5
             done

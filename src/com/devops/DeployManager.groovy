@@ -27,8 +27,12 @@ class DeployManager implements Serializable {
         script.sh "docker-compose build"
 
         // STEP 2: Ensure BLUE is running
-        script.echo "Starting BLUE (stable version)..."
-        script.sh "docker-compose up -d ${blue} || true"
+        try {
+            script.echo "Ensuring BLUE is running..."
+            script.sh "docker-compose up -d ${blue}"
+        } catch (Exception e) {
+            script.echo "BLUE might already be running"
+        }
 
         // Step 3: Deploy GREEN
         script.echo "Deploying GREEN (new version)..."
@@ -53,7 +57,7 @@ class DeployManager implements Serializable {
 
             // Step 4: Switch traffic
             script.echo "Switching traffic to GREEN..."
-            script.sh "docker stop ${blue} || true"
+            script.sh "docker stop ${blue}"
 
             script.echo "Deployment SUCCESS ✅"
 
@@ -72,11 +76,20 @@ class DeployManager implements Serializable {
         def blue = "empms-employee-blue"
         def green = "empms-employee-green"
 
-        script.echo "Stopping GREEN (new version)..."
-        script.sh "docker stop ${green} || true"
+        try {
+            script.echo "Stopping GREEN..."
+            script.sh "docker stop ${green}"
+        } catch (Exception e) {
+            script.echo "⚠️ GREEN was not running"
+        }
 
-        script.echo "Starting BLUE (old stable version)..."
-        script.sh "docker start ${blue} || true"
+        // Start BLUE
+        try {
+            script.echo "Starting BLUE..."
+            script.sh "docker start ${blue}"
+        } catch (Exception e) {
+            script.error("CRITICAL: BLUE container not found!")
+        }
 
         script.echo "Rollback completed"
     }

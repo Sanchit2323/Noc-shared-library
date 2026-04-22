@@ -24,7 +24,7 @@ class DeployManager implements Serializable {
 
         // Step 1: Build images
         script.echo "Building Docker images..."
-        script.sh "make build-images"
+        script.sh "docker-compose build"
 
         // Step 2: Deploy GREEN
         script.echo "Deploying GREEN (new version)..."

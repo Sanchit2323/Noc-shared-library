@@ -8,7 +8,9 @@ class DeployManager implements Serializable {
         this.script = script
     }
 
+    // =========================
     // ✅ Validation
+    // =========================
     def validate(env) {
         script.echo "Validating environment: ${env}"
 
@@ -17,7 +19,9 @@ class DeployManager implements Serializable {
         }
     }
 
-    // ✅ Main Deploy Method
+    // =========================
+    // ✅ Entry Point
+    // =========================
     def deploy(env) {
 
         if (env == 'dev') {
@@ -34,31 +38,29 @@ class DeployManager implements Serializable {
         }
     }
 
-    // ✅ DEV (Auto)
+    // =========================
+    // ✅ DEV
+    // =========================
     def deployDev() {
         script.echo "🚀 Deploying to DEV..."
-
-        script.sh '''
-        docker-compose up -d
-        '''
+        script.sh 'docker-compose up -d'
     }
 
-    // ✅ Manual Approval
+    // =========================
+    // ✅ STAGING
+    // =========================
     def approveStaging() {
-        script.echo "⏳ Waiting for approval for STAGING..."
         script.input message: "Deploy to STAGING?", ok: "Approve"
     }
 
-    // ✅ STAGING
     def deployStaging() {
         script.echo "🚀 Deploying to STAGING..."
-
-        script.sh '''
-        docker-compose up -d
-        '''
+        script.sh 'docker-compose up -d'
     }
 
+    // =========================
     // ✅ PROD (Blue-Green)
+    // =========================
     def deployProd() {
 
         def active = getActiveEnv()
@@ -83,12 +85,12 @@ class DeployManager implements Serializable {
     }
 
     // =========================
-    // ✅ Detect Active
+    // ✅ Detect Active Env
     // =========================
     def getActiveEnv() {
 
         def blueRunning = script.sh(
-            script: "docker ps --format '{{.Names}}' | grep empms-employee-blue || true",
+            script: "docker ps --format '{{.Names}}' | grep -w empms-employee-blue",
             returnStdout: true
         ).trim()
 
@@ -100,7 +102,7 @@ class DeployManager implements Serializable {
     }
 
     // =========================
-    // ✅ Health Check (FIXED)
+    // ✅ Health Check
     // =========================
     def healthCheck(env) {
 
@@ -117,6 +119,24 @@ class DeployManager implements Serializable {
     }
 
     // =========================
+    // ✅ Stop Container Safely
+    // =========================
+    def stopContainer(name) {
+
+        def exists = script.sh(
+            script: "docker ps -a --format '{{.Names}}' | grep -w ${name}",
+            returnStdout: true
+        ).trim()
+
+        if (exists) {
+            script.echo "Stopping ${name}..."
+            script.sh "docker stop ${name}"
+        } else {
+            script.echo "${name} not found. Skipping..."
+        }
+    }
+
+    // =========================
     // ✅ Switch Traffic
     // =========================
     def switchTraffic(env) {
@@ -124,14 +144,14 @@ class DeployManager implements Serializable {
         script.echo "🔀 Switching traffic to ${env}..."
 
         if (env == "green") {
-            script.sh "docker stop empms-employee-blue || true"
+            stopContainer("empms-employee-blue")
         } else {
-            script.sh "docker stop empms-employee-green || true"
+            stopContainer("empms-employee-green")
         }
     }
 
     // =========================
-    // ✅ Rollback
+    // ✅ Rollback (STRICT)
     // =========================
     def rollback(env) {
 
@@ -139,14 +159,29 @@ class DeployManager implements Serializable {
 
             script.echo "⚠️ Rolling back PRODUCTION..."
 
-            script.sh """
-            docker start empms-employee-blue || true
-            docker stop empms-employee-green || true
-            """
+            def blueExists = script.sh(
+                script: "docker ps -a --format '{{.Names}}' | grep -w empms-employee-blue",
+                returnStdout: true
+            ).trim()
+
+            if (!blueExists) {
+                script.error "❌ BLUE container not found. Cannot rollback!"
+            }
+
+            script.echo "Starting BLUE..."
+            script.sh "docker start empms-employee-blue"
+
+            def greenRunning = script.sh(
+                script: "docker ps --format '{{.Names}}' | grep -w empms-employee-green",
+                returnStdout: true
+            ).trim()
+
+            if (greenRunning) {
+                script.echo "Stopping GREEN..."
+                script.sh "docker stop empms-employee-green"
+            }
 
             script.echo "✅ Rollback completed"
-        } else {
-            script.echo "Rollback not required for ${env}"
         }
     }
 }

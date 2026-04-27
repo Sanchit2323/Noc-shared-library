@@ -8,89 +8,104 @@ class DeployManager implements Serializable {
         this.script = script
     }
 
-    def validate(String env) {
-        script.echo "Validating ${env}"
+    // ✅ Validation
+    def validate(env) {
+        script.echo "Validating environment: ${env}"
 
-        if(env != "dev" && env != "staging" && env != "prod") {
-            script.error "Invalid environment"
+        if (!['dev', 'staging', 'prod'].contains(env)) {
+            script.error "Invalid ENV: ${env}"
         }
     }
 
-    def deploy(String env) {
-        script.echo "Starting deployment to ${env} using Blue-Green..."
+    // ✅ Main Deploy Method
+    def deploy(env) {
 
-        def blue = "empms-employee-blue"
-        def green = "empms-employee-green"
-
-        // Step 1: Build images
-        script.echo "Building Docker images..."
-        script.sh "docker-compose build"
-
-        // STEP 2: Ensure BLUE is running
-        try {
-            script.echo "Ensuring BLUE is running..."
-            script.sh "docker-compose up -d ${blue}"
-        } catch (Exception e) {
-            script.echo "BLUE might already be running"
+        if (env == 'dev') {
+            deployDev()
         }
 
-        // Step 3: Deploy GREEN
-        script.echo "Deploying GREEN (new version)..."
-        script.sh "docker-compose up -d ${green}"
+        if (env == 'staging') {
+            approveStaging()
+            deployStaging()
+        }
 
-        // wait for app
-        script.echo "Waiting for GREEN to be ready..."
-        script.sleep(20)
-
-        try {
-            // Step 3: Health check
-            script.echo "Running health check on GREEN..."
-
-            script.sh """
-            for i in {1..5}; do
-              docker exec empms-employee-green curl -f http://localhost:8083/employee/search/all && exit 0
-              echo "Retrying health check..."
-              sleep 5
-            done
-            exit 1
-            """
-
-            // Step 4: Switch traffic
-            script.echo "Switching traffic to GREEN..."
-            script.sh "docker stop ${blue}"
-
-            script.echo "Deployment SUCCESS ✅"
-
-        } catch (Exception e) {
-
-            script.echo "Deployment FAILED ❌ → Triggering rollback..."
-            rollback(env)
-
-            script.error("Deployment failed and rollback executed")
+        if (env == 'prod') {
+            deployProd()
         }
     }
 
-    def rollback(String env) {
-        script.echo "Rollback triggered in ${env}"
+    // ✅ DEV (Auto)
+    def deployDev() {
+        script.echo "🚀 Deploying to DEV..."
 
-        def blue = "empms-employee-blue"
-        def green = "empms-employee-green"
+        script.sh '''
+        docker-compose up -d
+        '''
+    }
 
-        try {
-            script.echo "Stopping GREEN..."
-            script.sh "docker stop ${green}"
-        } catch (Exception e) {
-            script.echo "⚠️ GREEN was not running"
+    // ✅ Manual Approval
+    def approveStaging() {
+        script.echo "⏳ Waiting for approval for STAGING..."
+        script.input message: "Deploy to STAGING?", ok: "Approve"
+    }
+
+    // ✅ STAGING
+    def deployStaging() {
+        script.echo "🚀 Deploying to STAGING..."
+
+        script.sh '''
+        docker-compose up -d
+        '''
+    }
+
+    // ✅ PROD (Blue-Green)
+    def deployProd() {
+
+        script.echo "🚀 Starting BLUE..."
+        script.sh 'docker-compose up -d empms-employee-blue'
+
+        script.echo "🚀 Deploying GREEN..."
+        script.sh 'docker-compose up -d empms-employee-green'
+
+        script.echo "⏳ Waiting for GREEN to be ready..."
+        script.sleep 30
+
+        script.echo "🔍 Running Health Check..."
+        healthCheck()
+
+        script.echo "✅ Production deployment successful!"
+    }
+
+    // ✅ Health Check
+    def healthCheck() {
+
+        def status = script.sh(
+            script: 'curl -s -o /dev/null -w "%{http_code}" http://localhost/employee/healthz',
+            returnStdout: true
+        ).trim()
+
+        script.echo "Health Check Status: ${status}"
+
+        if (status != "200") {
+            script.error "❌ Health check failed!"
         }
+    }
 
-        // Start BLUE
-        try {
-            script.echo "Starting BLUE..."
-            script.sh "docker start ${blue}"
-        } catch (Exception e) {
-            script.error("CRITICAL: BLUE container not found!")
+    // ✅ Rollback
+    def rollback(env) {
+
+        if (env == 'prod') {
+
+            script.echo "⚠️ Rolling back PRODUCTION..."
+
+            script.sh '''
+            docker stop empms-employee-green || true
+            docker start empms-employee-blue || true
+            '''
+
+            script.echo "✅ Rollback completed"
+        } else {
+            script.echo "Rollback not required for ${env}"
         }
-
-        script.echo "Rollback completed"
     }
 }

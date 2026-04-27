@@ -61,47 +61,88 @@ class DeployManager implements Serializable {
     // ✅ PROD (Blue-Green)
     def deployProd() {
 
-        script.echo "🚀 Starting BLUE..."
-        script.sh 'docker-compose up -d empms-employee-blue'
+        def active = getActiveEnv()
+        def newEnv = active == "blue" ? "green" : "blue"
 
-        script.echo "🚀 Deploying GREEN..."
-        script.sh 'docker-compose up -d empms-employee-green'
+        script.echo "🔵 Active: ${active}"
+        script.echo "🟢 Deploying NEW: ${newEnv}"
 
-        script.echo "⏳ Waiting for GREEN to be ready..."
+        // Deploy new version
+        script.sh "docker-compose up -d empms-employee-${newEnv}"
+
+        script.echo "⏳ Waiting for ${newEnv} to be ready..."
         script.sleep 30
 
-        script.echo "🔍 Running Health Check..."
-        healthCheck()
+        // Health check
+        healthCheck(newEnv)
 
-        script.echo "✅ Production deployment successful!"
+        // Switch traffic
+        switchTraffic(newEnv)
+
+        script.echo "✅ Production switched to ${newEnv}"
     }
 
-    // ✅ Health Check
-    def healthCheck() {
+    // =========================
+    // ✅ Detect Active
+    // =========================
+    def getActiveEnv() {
 
-        def status = script.sh(
-            script: 'curl -s -o /dev/null -w "%{http_code}" http://localhost/employee/healthz',
+        def blueRunning = script.sh(
+            script: "docker ps --format '{{.Names}}' | grep empms-employee-blue || true",
             returnStdout: true
         ).trim()
 
-        script.echo "Health Check Status: ${status}"
-
-        if (status != "200") {
-            script.error "❌ Health check failed!"
+        if (blueRunning) {
+            return "blue"
+        } else {
+            return "green"
         }
     }
 
+    // =========================
+    // ✅ Health Check (FIXED)
+    // =========================
+    def healthCheck(env) {
+
+        script.echo "🔍 Checking health of ${env}..."
+
+        script.retry(5) {
+            script.sleep 5
+            script.sh """
+            docker exec empms-employee-${env} wget -qO- http://localhost:8083/employee/healthz
+            """
+        }
+
+        script.echo "✅ Health check passed for ${env}"
+    }
+
+    // =========================
+    // ✅ Switch Traffic
+    // =========================
+    def switchTraffic(env) {
+
+        script.echo "🔀 Switching traffic to ${env}..."
+
+        if (env == "green") {
+            script.sh "docker stop empms-employee-blue || true"
+        } else {
+            script.sh "docker stop empms-employee-green || true"
+        }
+    }
+
+    // =========================
     // ✅ Rollback
+    // =========================
     def rollback(env) {
 
         if (env == 'prod') {
 
             script.echo "⚠️ Rolling back PRODUCTION..."
 
-            script.sh '''
-            docker stop empms-employee-green || true
+            script.sh """
             docker start empms-employee-blue || true
-            '''
+            docker stop empms-employee-green || true
+            """
 
             script.echo "✅ Rollback completed"
         } else {

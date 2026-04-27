@@ -90,7 +90,7 @@ class DeployManager implements Serializable {
     def getActiveEnv() {
 
         def blueRunning = script.sh(
-            script: "docker ps --format '{{.Names}}' | grep -w empms-employee-blue",
+            script: "docker ps --format '{{.Names}}' | grep -w empms-employee-blue || echo ''",
             returnStdout: true
         ).trim()
 

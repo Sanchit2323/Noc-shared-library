@@ -110,10 +110,9 @@ class DeployManager implements Serializable {
 
         script.retry(5) {
             script.sleep 5
-            script.httpRequest(
-                url: "http://localhost/employee/healthz",
-                validResponseCodes: '200'
-            )
+            script.sh """
+            docker exec empms-employee-${env} wget -qO- http://localhost:8083/employee/healthz
+            """
         }
 
         script.echo "✅ Health check passed for ${env}"
